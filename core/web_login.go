@@ -11,7 +11,6 @@ import (
 	"math/big"
 	"net"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
 	"regexp"
 	"runtime/debug"
@@ -108,11 +107,11 @@ func WebLogin(server string, username string, password string) (string, error) {
 		return "", err
 	}
 
-	respDump, err := httputil.DumpResponse(resp, true)
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Printf("RESPONSE:\n%s", string(respDump))
+	// respDump, err := httputil.DumpResponse(resp, true)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+	// log.Printf("RESPONSE:\n%s", string(respDump))
 
 	n, _ = resp.Body.Read(buf)
 	defer resp.Body.Close()
@@ -160,11 +159,11 @@ func WebLogin(server string, username string, password string) (string, error) {
 			debug.PrintStack()
 			return "", err
 		}
-		respDump, err := httputil.DumpResponse(resp, true)
-		if err != nil {
-			log.Fatal(err)
-		}
-		log.Printf("RESPONSE:\n%s", string(respDump))
+		// respDump, err := httputil.DumpResponse(resp, true)
+		// if err != nil {
+		// 	log.Fatal(err)
+		// }
+		// log.Printf("RESPONSE:\n%s", string(respDump))
 
 		n, _ := resp.Body.Read(buf)
 		defer resp.Body.Close()
@@ -207,11 +206,11 @@ func AuthSms(server string, username string, password string, twfId string, smsC
 		return "", err
 	}
 
-	respDump, err := httputil.DumpResponse(resp, true)
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Printf("RESPONSE:\n%s", string(respDump))
+	// respDump, err := httputil.DumpResponse(resp, true)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+	// log.Printf("RESPONSE:\n%s", string(respDump))
 
 	n, _ := resp.Body.Read(buf)
 	defer resp.Body.Close()

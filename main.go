@@ -10,13 +10,12 @@ import (
 
 func main() {
 	// CLI args
-	host, port, username, password, socksBind := "", 0, "", "", ""
+	host, port, username, password, socksBind,debugDump := "", 0, "", "", "", false
 	flag.StringVar(&host, "server", "oa1.anhuitelecom.com", "EasyConnect server address (e.g. oa1.anhuitelecom.com, oa2.anhuitelecom.com)")
 	flag.StringVar(&username, "username", "", "Your username")
 	flag.StringVar(&password, "password", "", "Your password")
 	flag.StringVar(&socksBind, "socks-bind", ":1088", "The addr socks5 server listens on (e.g. 127.0.0.1:1088)")
 	flag.IntVar(&port, "port", 443, "EasyConnect port address (e.g. 443)")
-	debugDump := false
 	flag.BoolVar(&debugDump, "debug-dump", false, "Enable traffic debug dump (only for debug usage)")
 	flag.Parse()
 
