@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"regexp"
 	"runtime/debug"
@@ -98,6 +99,7 @@ func WebLogin(server string, username string, password string) (string, error) {
 	}
 
 	req, err := http.NewRequest("POST", addr, strings.NewReader(form.Encode()))
+
 	req.Header.Set("Cookie", "TWFID="+twfId)
 
 	resp, err = c.Do(req)
@@ -106,8 +108,40 @@ func WebLogin(server string, username string, password string) (string, error) {
 		return "", err
 	}
 
+	respDump, err := httputil.DumpResponse(resp, true)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("RESPONSE:\n%s", string(respDump))
+
 	n, _ = resp.Body.Read(buf)
 	defer resp.Body.Close()
+
+	
+		// 获取Set-Cookie头部
+		cookies := resp.Header["Set-Cookie"]
+		log.Println("Set-Cookie headers:", cookies)
+
+		// 将cookiePairs切片连接成一个字符串
+		cookieHeader := strings.Join(cookies, "; ")
+
+		// 使用分号分割cookie头部为多个键值对
+		cookiePairsSplit := strings.Split(cookieHeader, "; ")
+
+		// 遍历键值对，查找TWFID的值
+		var newTwfid string
+		for _, pair := range cookiePairsSplit {
+			if strings.HasPrefix(pair, "TWFID=") {
+				newTwfid = strings.TrimPrefix(pair, "TWFID=")
+				break
+			}
+		}
+
+		log.Println("TWFID value:", newTwfid)
+
+		
+	req.Header.Set("Cookie", "TWFID="+newTwfid)
+
 
 	// log.Printf("First stage login response: %s", string(buf[:n]))
 
@@ -118,6 +152,7 @@ func WebLogin(server string, username string, password string) (string, error) {
 		addr = server + "/por/login_sms.csp?apiversion=1"
 		log.Printf("SMS Request: " + addr)
 		req, err = http.NewRequest("POST", addr, nil)
+
 		req.Header.Set("Cookie", "TWFID="+twfId)
 
 		resp, err = c.Do(req)
@@ -125,42 +160,23 @@ func WebLogin(server string, username string, password string) (string, error) {
 			debug.PrintStack()
 			return "", err
 		}
+		respDump, err := httputil.DumpResponse(resp, true)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("RESPONSE:\n%s", string(respDump))
 
 		n, _ := resp.Body.Read(buf)
 		defer resp.Body.Close()
 
-		if !strings.Contains(string(buf[:n]), "验证码已发送到您的手机") && !strings.Contains(string(buf[:n]), "<USER_PHONE>") {
+		if !strings.Contains(string(buf[:n]), "已发送") && !strings.Contains(string(buf[:n]), "<USER_PHONE>") {
 			debug.PrintStack()
 			return "", errors.New("unexpected sms resp: " + string(buf[:n]))
 		}
 
 		log.Printf("SMS Code is sent or still valid.")
 
-		return twfId, ERR_NEXT_AUTH_SMS
-	}
-
-	// TOTP Authnication Process (Edited by JHong)
-	if strings.Contains(string(buf[:n]), "<NextService>auth/token</NextService>") || strings.Contains(string(buf[:n]), "<NextServiceSubType>totp</NextServiceSubType>") {
-		log.Print("TOTP Authnication required.")
-		return twfId, ERR_NEXT_AUTH_TOTP
-	}
-
-	if strings.Contains(string(buf[:n]), "<NextAuth>-1</NextAuth>") || !strings.Contains(string(buf[:n]), "<NextAuth>") {
-		log.Print("No NextAuth found.")
-	} else {
-		debug.PrintStack()
-		return "", errors.New("Not implemented auth: " + string(buf[:n]))
-	}
-
-	if !strings.Contains(string(buf[:n]), "<Result>1</Result>") {
-		debug.PrintStack()
-		return "", errors.New("Login FAILED: " + string(buf[:n]))
-	}
-
-	twfIdMatch := regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf[:n])
-	if twfIdMatch != nil {
-		twfId = string(twfIdMatch[1])
-		log.Printf("Update twfId: %s", twfId)
+		return newTwfid, ERR_NEXT_AUTH_SMS
 	}
 
 	log.Printf("Web Login process done.")
@@ -182,7 +198,7 @@ func AuthSms(server string, username string, password string, twfId string, smsC
 		"svpn_inputsms": {smsCode},
 	}
 
-	req, err := http.NewRequest("POST", addr, strings.NewReader(form.Encode()))
+	req, _ := http.NewRequest("POST", addr, strings.NewReader(form.Encode()))
 	req.Header.Set("Cookie", "TWFID="+twfId)
 
 	resp, err := c.Do(req)
@@ -191,54 +207,19 @@ func AuthSms(server string, username string, password string, twfId string, smsC
 		return "", err
 	}
 
+	respDump, err := httputil.DumpResponse(resp, true)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("RESPONSE:\n%s", string(respDump))
+
 	n, _ := resp.Body.Read(buf)
 	defer resp.Body.Close()
 
-	if !strings.Contains(string(buf[:n]), "Auth sms suc") {
+	if !strings.Contains(string(buf[:n]), "欢迎") {
 		debug.PrintStack()
 		return "", errors.New("SMS Code verification FAILED: " + string(buf[:n]))
 	}
-
-	twfId = string(regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf[:n])[1])
-	log.Print("SMS Code verification SUCCESS")
-
-	return twfId, nil
-}
-
-// JHong Implementing.......
-func TOTPAuth(server string, username string, password string, twfId string, TOTPCode string) (string, error) {
-	c := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}}
-
-	buf := make([]byte, 40960)
-
-	addr := "https://" + server + "/por/login_token.csp"
-	log.Printf("TOTP token Request: " + addr)
-	form := url.Values{
-		"svpn_inputtoken": {TOTPCode},
-	}
-
-	req, err := http.NewRequest("POST", addr, strings.NewReader(form.Encode()))
-	req.Header.Set("Cookie", "TWFID="+twfId)
-
-	resp, err := c.Do(req)
-	if err != nil {
-		debug.PrintStack()
-		return "", err
-	}
-
-	n, _ := resp.Body.Read(buf)
-	defer resp.Body.Close()
-
-	if !strings.Contains(string(buf[:n]), "suc") {
-		debug.PrintStack()
-		return "", errors.New("TOTP token verification FAILED: " + string(buf[:n]))
-	}
-
-	twfId = string(regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf[:n])[1])
-	log.Print("TOTP verification SUCCESS")
 
 	return twfId, nil
 }
